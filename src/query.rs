@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 use core::fmt;
-use std::{env, error::Error, fmt::Formatter, fs, io::Read};
+use std::{env, error::Error, fmt::Formatter, fs};
 
 #[derive(Debug)]
 pub enum MyError {
@@ -47,8 +47,8 @@ pub fn setup() -> Result<Connection, Box<dyn Error>>  {
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY,
         list_id INTEGER REFERENCES lists(id),
-        task TEXT NOT NULL,
-        progress TEXT NOT NULL,
+        name TEXT NOT NULL,
+        prog TEXT NOT NULL,
         status TEXT NOT NULL
     )   
     "
@@ -92,42 +92,77 @@ pub fn return_tasks(conn: &Connection, list_id : u32) -> Result<Vec<Task>, Box<d
                 prog : row.get(2)?,
                 status : row.get(3)?
             })
-        })?.collect::<Result<Vec<_>, rusqlite::Error>>()?;
+        })?.collect::<Result<Vec<Task>, rusqlite::Error>>()?;
     
     Ok(tasks)
 }
 
+pub fn new_task(conn: &Connection, n: u32) -> Result<(), Box<dyn Error>> {
+    println!("What is your new task?");
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf)?;
+    if buf.len() == 0 {
+        return Err(Box::new(MyError::BadInput));
+    }
+    conn.execute("INSERT INTO tasks (list_id, name, prog, status) VALUES (?1, ?2, ?3, ?4)", (&n, &buf, &"NA", &"INCOMPLETE"))?;
+    println!("succesfully added task {}", &buf);
+    
+    Ok(())
+}
+
+pub fn disp_tasks(tasks: &Vec<Task>) -> Result<(), Box<dyn Error>> {
+    println!("{:<4}{:<20}{:<20}{:<10}", "ID", "TASK", "PROGRESS", "STATUS");
+    for task in tasks {
+        println!("{:<4}{:<20}{:<20}{:<10}", task.id, task.name.trim(), task.prog.trim(), task.status);
+    }
+    Ok(())
+}
+
+pub fn update_task(conn: &Connection, task: &Task) -> Result<(), Box<dyn Error>> {
+    println!("Current Progress: {}", task.prog);
+    println!("What is the progress you've made?");
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf)?;
+    if buf.len() == 0 {
+        return Err(Box::new(MyError::BadInput));
+    }
+    conn.execute("UPDATE tasks SET prog = ?1 WHERE id = ?2", (&buf, &task.id))?;
+    println!("Updated progress to {}", buf);
+    Ok(())
+}
+
+pub fn delete_task(conn: &Connection, task: &Task) -> Result<(), Box<dyn Error>> {
+    println!("Are you sure you want to delete this task: {}", task.name);
+    println!("Click 0 for yes 1 for no");
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf)?;
+    match buf.trim().parse::<u8>().unwrap() {
+        0 => {
+            conn.execute("DELETE FROM tasks WHERE id = ?1", [&task.id])?;
+            println!("Deleted task successfuly");
+
+        }
+        _ => {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
 
 
-
-
-
-
-// let conn = Connection::open("instance/mydata.db")?;
-
-//     conn.execute(
-//         "CREATE TABLE IF NOT EXISTS user (
-//             id INTEGER PRIMARY KEY,
-//             name TEXT NOT NULL,
-//             age INTEGER
-//         )",
-//         [],
-//     )?;
-
-//     conn.execute(
-//         "INSERT INTO user (name, age) VALUES (?1, ?2)",
-//         (&"Alice", &30),
-//     )?;
-
-//     let mut stmt = conn.prepare("SELECT id, name, age FROM user")?;
-//     let user_iter = stmt.query_map([], |row| {
-//         Ok((
-//             row.get::<_, i32>(0)?,
-//             row.get::<_, String>(1)?,
-//             row.get::<_, i32>(2)?,
-//         ))
-//     })?;
-
-//     for user in user_iter {
-//         println!("Found user {:?}", user?);
-//     }
+pub fn mark_task(conn: &Connection, task: &Task) -> Result<(), Box<dyn Error>> {
+    println!("Completed task: {}", task.name);
+    println!("Click 0 to mark as completed, 1 to go back");
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf)?;
+    match buf.trim().parse::<u8>().unwrap() {
+        0 => {
+            conn.execute("UPDATE tasks SET status = ?1 WHERE id = ?2", (&"COMPLETE", &task.id))?;
+            println!("Marked as complete");
+        }
+        _ => {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
